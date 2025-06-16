@@ -39,12 +39,36 @@ while True:
         if current_time - last_analysis_time > analysis_interval:
             face_crop = frame_rgb[y1:y2, x1:x2]
 
+            if face_crop.shape[0] == 0 or face_crop.shape[1] == 0:
+                print("[WARNING] Découpe du visage invalide pour FER.")
+                continue
+
+            # Convertir en BGR pour FER
+            face_crop_bgr = cv2.cvtColor(face_crop, cv2.COLOR_RGB2BGR)
+
+            # Sauvegarde temporaire pour test
+            cv2.imwrite("face_crop.jpg", face_crop_bgr)
+
             # Analyse Emotion (FER)
-            emotion = emotion_detector.top_emotion(face_crop)
+            emotion = emotion_detector.top_emotion(face_crop_bgr)
+            print(f"[DEBUG] Résultat brut FER : {emotion}")
+
+            if not emotion:
+                emotions_dict = emotion_detector.detect_emotions(face_crop_bgr)
+                print(f"[DEBUG] Détail complet émotions : {emotions_dict}")
+                if emotions_dict and emotions_dict[0]["emotions"]:
+                    emotion_text = max(emotions_dict[0]["emotions"], key=emotions_dict[0]["emotions"].get)
+                else:
+                    emotion_text = "Inconnu"
+            else:
+                emotion_text = emotion[0]
+
+
+            print(f"[DEBUG] Résultat brut FER : {emotion}")
             emotion_text = emotion[0] if emotion else "Unknown"
 
             # Analyse Age (InsightFace)
-            age = face.age
+            age = face.age  
 
             # Analyse Genre (DeepFace)
             try:
