@@ -1,17 +1,14 @@
 import cv2
 import time
 import json
-from datetime import datetime
 from deepface import DeepFace
 
-# Chargement du classifieur Haar cascade pour détection visage
+# Chargement du détecteur de visages
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
 cap = cv2.VideoCapture(0)
 analysis_interval = 5  # secondes
 last_analysis_time = 0
-
-all_data = []
 
 print("[INFO] Appuie sur Q pour quitter.")
 
@@ -21,13 +18,10 @@ while True:
         break
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # Détection des visages (on prend le premier détecté)
     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
 
     current_time = time.time()
     if current_time - last_analysis_time > analysis_interval and len(faces) > 0:
-        # On traite uniquement le premier visage détecté
         (x, y, w, h) = faces[0]
         face_img = frame[y:y+h, x:x+w]
 
@@ -35,49 +29,58 @@ while True:
             face_rgb = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
             result = DeepFace.analyze(face_rgb, actions=['age', 'gender', 'emotion'], enforce_detection=False)
 
-            age = result.get("age", "Inconnu")
-            gender = result.get("gender", "Inconnu")
-            dominant_emotion = result.get("dominant_emotion", "Inconnu")
-            emotions = result.get("emotion", {})
+            if isinstance(result, list):
+                result = result[0]
 
+            # Âge
+            age = int(result.get("age", -1))
+
+            # Genre
+            gender_name = result.get("gender", "Inconnu")
+            if isinstance(gender_name, dict):
+                gender_name = max(gender_name, key=gender_name.get)
+            gender_value = 0 if str(gender_name).lower() in ["man", "male", "homme"] else 1
+
+            # Émotions (top 3)
+            emotions_dict = result.get("emotion", {})
+            emotions_list = [
+                {
+                    "emotionName": emotion,
+                    "percentage": int(round(value))
+                }
+                for emotion, value in sorted(emotions_dict.items(), key=lambda item: item[1], reverse=True)
+            ][:3]
+
+            # Construction du JSON
             data_to_save = {
-                "timestamp": datetime.now().isoformat(),
                 "age": age,
-                "gender": gender,
-                "dominant_emotion": dominant_emotion,
-                "emotions": emotions
+                "gender": {
+                    "genderName": gender_name,
+                    "genderValue": gender_value
+                },
+                "emotions": emotions_list
             }
-            all_data.append(data_to_save)
 
-            print(f"[INFO] Données capturées à {data_to_save['timestamp']}")
             print(json.dumps(data_to_save, indent=4, ensure_ascii=False))
 
-            # Dessiner un rectangle vert autour du visage traité
+            # Affichage de l'émotion dominante sur l'image
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-
-            # Afficher l’émotion dominante au-dessus du rectangle
-            cv2.putText(frame, dominant_emotion, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
+            if emotions_list:
+                cv2.putText(frame, emotions_list[0]['emotionName'], (x, y-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
         except Exception as e:
-            print(f"[ERREUR] Analyse DeepFace échouée : {e}")
+            print(f"[ERREUR] Analyse échouée : {e}")
 
         last_analysis_time = current_time
 
     elif len(faces) > 0:
-        # Si on ne fait pas l'analyse cette fois, on affiche quand même le rectangle sur le visage traité
         (x, y, w, h) = faces[0]
         cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
-    # Affichage en direct
     cv2.imshow('Webcam - Analyse DeepFace', frame)
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
-        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"analyse_faciale_complete_{timestamp_str}.json"
-
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(all_data, f, indent=4, ensure_ascii=False)
-
-        print(f"[INFO] Toutes les données sauvegardées dans : {filename}")
         break
 
 cap.release()
