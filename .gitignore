@@ -1,2 +1,5 @@
 *.pyc
 venv/
+.idea/
+ia-vision-site/nodes_modules/
+ia-vision-site/.vscode
